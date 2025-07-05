@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flot Maximal - Graphes avec flèches orientées</title>
+<style>
+  body {
+    font-family: sans-serif;
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #left-panel {
+    flex: 1;
+    position: relative;
+  }
+  #controls {
+    position: absolute;
+    top: 10px; left: 10px;
+    background: #f0f0f0;
+    padding: 10px;
+    border-radius: 8px;
+    z-index: 20;
+  }
+  svg {
+    width: 100%;
+    height: 100vh;
+    background-color: #fafafa;
+    cursor: grab;
+  }
+  .node {
+    fill: #2196F3;
+    stroke: #fff;
+    stroke-width: 2px;
+    cursor: pointer;
+  }
+  .arc {
+    stroke: #555;
+    stroke-width: 2px;
+    marker-end: url(#arrow);
+  }
+  .label {
+    fill: #000;
+    font-size: 14px;
+    pointer-events: none;
+  }
+  #right-panel {
+    width: 400px;
+    overflow-y: auto;
+    border-left: 1px solid #ddd;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+  }
+  table th, table td {
+    border: 1px solid #ccc;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  table th {
+    background-color: #eee;
+  }
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px;
+  }
+  button {
+    cursor: pointer;
+  }
+  .arc.highlighted {
+  stroke: red;
+  stroke-width: 3px;
+}
+</style>
+</head>
+<body>
+  <div id="left-panel">
+    <div id="controls"><label>
+        <input type="radio" name="mode" value="node" checked onchange="mode = 'node'">
+        Ajouter Noeud
+        </label>
+        <label style="margin-left: 10px;">
+        <input type="radio" name="mode" value="arc" onchange="mode = 'arc'">
+        Ajouter Arc
+        </label>
+
+      <button onclick="calculerFlot()">Calculer Flot Max</button>
+      <br><br>
+      <label>Départ:</label><input id="start" type="text" size="1" />
+      <label>Arrivée:</label><input id="end" type="text" size="1" />
+    </div>
+    <svg id="svg"></svg>
+  </div>
+
+  <div id="right-panel">
+    <h3>Liste des Nœuds</h3>
+    <table id="node-table">
+      <thead>
+        <tr><th>Nom</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>Liste des Arcs</h3>
+    <table id="arc-table">
+      <thead>
+        <tr><th>Début</th><th>Fin</th><th>Capacité</th><th>Actions</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+  let svg = document.getElementById("svg");
+  svg.addEventListener('contextmenu', e => e.preventDefault());
+
+  let mode = "node";
+  let nodes = [];
+  let arcs = [];
+  let nodeId = 0;
+  let selectedNode = null;
+  let draggingNode = null;
+
+function draw() {
+  svg.innerHTML = `
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" fill="#555" />
+      </marker>
+    </defs>`;
+
+  // 🔁 Dessin des arcs
+  arcs.forEach(arc => {
+    // vecteur unitaire
+    const dx = arc.target.x - arc.source.x;
+    const dy = arc.target.y - arc.source.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const unitX = dx / length;
+    const unitY = dy / length;
+    const r = 20; // rayon du noeud
+
+    const startX = arc.source.x + unitX * r;
+    const startY = arc.source.y + unitY * r;
+    const endX = arc.target.x - unitX * r;
+    const endY = arc.target.y - unitY * r;
+
+    // ligne
+    let path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M${startX} ${startY} L${endX} ${endY}`);
+    path.setAttribute("class", arc.highlight ? "arc highlighted" : "arc");
+    path.setAttribute("marker-end", "url(#arrow)");
+
+    // ⚙️ Modifier capacité
+    path.addEventListener('click', e => {
+      e.preventDefault();
+      let newCap = prompt("Modifier capacité:", arc.cap);
+      if (newCap !== null) {
+        let val = Number(newCap);
+        if (!isNaN(val) && val >= 0) {
+          arc.cap = val;
+          draw();
+          refreshArcTable();
+        } else {
+          alert("Capacité invalide !");
+        }
+      }
+    });
+
+    // ❌ Supprimer
+    path.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      if (confirm(`Supprimer l'arc ${arc.source.id} → ${arc.target.id} ?`)) {
+        arcs = arcs.filter(a => a !== arc);
+        draw();
+        refreshArcTable();
+      }
+    });
+
+    svg.appendChild(path);
+
+    // texte de capacité
+    const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
+    let text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", midX);
+    text.setAttribute("y", midY);
+    text.setAttribute("class", "label");
+    text.textContent = arc.cap;
+    svg.appendChild(text);
+  });
+
+  // 🔁 Dessin des nœuds
+  nodes.forEach(node => {
+    let circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", node.x);
+    circle.setAttribute("cy", node.y);
+    circle.setAttribute("r", 20);
+    circle.setAttribute("class", "node");
+
+    circle.onmousedown = () => { draggingNode = node; };
+    circle.ondblclick = () => {
+      if (confirm("Supprimer ce noeud ?")) {
+        arcs = arcs.filter(a => a.source !== node && a.target !== node);
+        nodes = nodes.filter(n => n !== node);
+        draw();
+        refreshNodeTable();
+        refreshArcTable();
+      }
+    };
+
+    svg.appendChild(circle);
+
+    let text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", node.x - 7);
+    text.setAttribute("y", node.y + 5);
+    text.setAttribute("class", "label");
+    text.textContent = node.id;
+    svg.appendChild(text);
+  });
+}
+
+  svg.onmousedown = e => {
+    if (mode === "node") {
+      let newId = generateUniqueNodeId();
+      nodes.push({ id: newId, x: e.offsetX, y: e.offsetY });
+      draw();
+      refreshNodeTable();
+      refreshArcTable();
+    } else if (mode === "arc") {
+      selectedNode = nodes.find(n => Math.hypot(n.x - e.offsetX, n.y - e.offsetY) < 20);
+    }
+  };
+
+  svg.onmouseup = e => {
+    if (mode === "arc" && selectedNode) {
+      let targetNode = nodes.find(n => Math.hypot(n.x - e.offsetX, n.y - e.offsetY) < 20);
+      if (targetNode && targetNode !== selectedNode) {
+        let capStr = prompt("Capacité de l'arc:", "10");
+        let cap = Number(capStr);
+        if (capStr !== null && !isNaN(cap) && cap >= 0) {
+          arcs.push({ source: selectedNode, target: targetNode, cap });
+          draw();
+          refreshArcTable();
+        } else {
+          alert("Capacité invalide !");
+        }
+      }
+      selectedNode = null;
+    }
+    draggingNode = null;
+  };
+
+  svg.onmousemove = e => {
+    if (draggingNode) {
+      draggingNode.x = e.offsetX;
+      draggingNode.y = e.offsetY;
+      draw();
+      refreshArcTable();
+    }
+  };
+
+  function generateUniqueNodeId() {
+    function idToStr(num) {
+      let s = "";
+      while (num >= 0) {
+        s = String.fromCharCode(65 + (num % 26)) + s;
+        num = Math.floor(num / 26) - 1;
+      }
+      return s;
+    }
+    let i = 0;
+    while(true) {
+      let candidate = idToStr(i);
+      if (!nodes.find(n => n.id === candidate)) return candidate;
+      i++;
+    }
+  }
+
+  function refreshNodeTable() {
+    let tbody = document.querySelector("#node-table tbody");
+    tbody.innerHTML = "";
+    nodes.forEach((node, idx) => {
+      let tr = document.createElement("tr");
+
+      let tdName = document.createElement("td");
+      let inputName = document.createElement("input");
+      inputName.type = "text";
+      inputName.value = node.id;
+      inputName.maxLength = 3;
+      inputName.style.textTransform = "uppercase";
+
+      inputName.onchange = () => {
+        let newName = inputName.value.toUpperCase().trim();
+        if (!newName) {
+          alert("Le nom ne peut pas être vide.");
+          inputName.value = node.id;
+          return;
+        }
+        if (nodes.some((n,i) => n.id === newName && i !== idx)) {
+          alert("Ce nom est déjà utilisé.");
+          inputName.value = node.id;
+          return;
+        }
+        let oldName = node.id;
+        node.id = newName;
+        arcs.forEach(arc => {
+          if (arc.source === node) arc.source.id = newName;
+          if (arc.target === node) arc.target.id = newName;
+        });
+        draw();
+        refreshArcTable();
+      };
+
+      tdName.appendChild(inputName);
+      tr.appendChild(tdName);
+
+      let tdAction = document.createElement("td");
+      let btnSuppr = document.createElement("button");
+      btnSuppr.textContent = "Supprimer";
+      btnSuppr.onclick = () => {
+        if (confirm(`Supprimer le noeud ${node.id} ?`)) {
+          arcs = arcs.filter(a => a.source !== node && a.target !== node);
+          nodes.splice(idx, 1);
+          draw();
+          refreshNodeTable();
+          refreshArcTable();
+        }
+      };
+      tdAction.appendChild(btnSuppr);
+      tr.appendChild(tdAction);
+
+      tbody.appendChild(tr);
+    });
+    
+
+    if(nodes.length === 0) {
+      let tr = document.createElement("tr");
+      let td = document.createElement("td");
+      td.colSpan = 2;
+      td.textContent = "Aucun nœud.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function refreshArcTable() {
+    let tbody = document.querySelector("#arc-table tbody");
+    tbody.innerHTML = "";
+    arcs.forEach((arc, idx) => {
+      let tr = document.createElement("tr");
+
+      let tdStart = document.createElement("td");
+      tdStart.textContent = arc.source.id;
+      tr.appendChild(tdStart);
+
+      let tdEnd = document.createElement("td");
+      tdEnd.textContent = arc.target.id;
+      tr.appendChild(tdEnd);
+
+      let tdCap = document.createElement("td");
+      let inputCap = document.createElement("input");
+      inputCap.type = "number";
+      inputCap.min = 0;
+      inputCap.value = arc.cap;
+      inputCap.style.width = "60px";
+      inputCap.addEventListener("change", () => {
+        let val = Number(inputCap.value);
+        if (isNaN(val) || val < 0) {
+          alert("Capacité invalide !");
+          inputCap.value = arc.cap;
+        } else {
+          arc.cap = val;
+          draw();
+        }
+      });
+      tdCap.appendChild(inputCap);
+      tr.appendChild(tdCap);
+
+      let tdActions = document.createElement("td");
+      let btnSuppr = document.createElement("button");
+      btnSuppr.textContent = "Supprimer";
+      btnSuppr.onclick = () => {
+        if (confirm(`Supprimer l'arc ${arc.source.id} → ${arc.target.id} ?`)) {
+          arcs.splice(idx, 1);
+          draw();
+          refreshArcTable();
+        }
+      };
+      tdActions.appendChild(btnSuppr);
+      tr.appendChild(tdActions);
+
+      tbody.appendChild(tr);
+    });
+
+    if (arcs.length === 0) {
+      let tr = document.createElement("tr");
+      let td = document.createElement("td");
+      td.colSpan = 4;
+      td.textContent = "Aucun arc.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function bfs(sourceId, sinkId) {
+    let queue = [sourceId];
+    let parents = {};
+    while (queue.length) {
+      let current = queue.shift();
+      for (let arc of arcs) {
+        if (
+          arc.source.id === current &&
+          arc.cap > 0 &&
+          !(arc.target.id in parents) &&
+          arc.target.id !== sourceId
+        ) {
+          parents[arc.target.id] = arc;
+          if (arc.target.id === sinkId) return parents;
+          queue.push(arc.target.id);
+        }
+      }
+    }
+    return null;
+  }
+
+function calculerFlot() {
+  let sourceId = document.getElementById("start").value.toUpperCase().trim();
+  let sinkId = document.getElementById("end").value.toUpperCase().trim();
+
+  if (!nodes.find(n => n.id === sourceId)) return alert("Nœud de départ invalide !");
+  if (!nodes.find(n => n.id === sinkId)) return alert("Nœud d'arrivée invalide !");
+  if (sourceId === sinkId) return alert("Le nœud de départ et d'arrivée doivent être différents !");
+  if (arcs.length === 0) return alert("Aucun arc pour le calcul !");
+
+  // Construction du graphe résiduel
+  let residuals = arcs.map(a => ({
+    source: a.source.id,
+    target: a.target.id,
+    cap: a.cap
+  }));
+
+  function findResidualArc(u, v) {
+    return residuals.find(a => a.source === u && a.target === v);
+  }
+
+  // Réinitialiser tous les arcs
+  arcs.forEach(a => a.highlight = false);
+
+  // BFS pour trouver un chemin augmentant
+  let queue = [sourceId];
+  let parents = {};
+  let visited = new Set([sourceId]);
+  let foundPath = false;
+
+  while (queue.length && !foundPath) {
+    let current = queue.shift();
+    for (let arc of residuals) {
+      if (arc.source === current && arc.cap > 0 && !visited.has(arc.target)) {
+        parents[arc.target] = arc;
+        if (arc.target === sinkId) {
+          foundPath = true;
+          break;
+        }
+        queue.push(arc.target);
+        visited.add(arc.target);
+      }
+    }
+  }
+
+  if (!foundPath) {
+    alert(`Aucun chemin trouvable entre ${sourceId} et ${sinkId}`);
+    draw();
+    return;
+  }
+
+  // Reconstruction du chemin et recherche du min
+  let path = [];
+  let minCap = Infinity;
+  for (let v = sinkId; v !== sourceId;) {
+    let arc = parents[v];
+    path.push(arc);
+    if (arc.cap < minCap) minCap = arc.cap;
+    v = arc.source;
+  }
+
+  // Colorier en rouge l’arc qui a minCap et enregistrer ses coordonnées
+  let arcMinDeb = null;
+  let arcMinFin = null;
+  for (let p of path) {
+    if (p.cap === minCap) {
+      for (let a of arcs) {
+        if (a.source.id === p.source && a.target.id === p.target) {
+          a.highlight = true;
+          arcMinDeb = a.source.id;
+          arcMinFin = a.target.id;
+          break;
+        }
+      }
+      break; // Ne colorier qu’un seul arc
+    }
+  }
+
+  // Mise à jour du graphe résiduel
+  path.forEach(a => {
+    a.cap -= minCap;
+    let retour = findResidualArc(a.target, a.source);
+    if (retour) {
+      retour.cap += minCap;
+    } else {
+      residuals.push({ source: a.target, target: a.source, cap: minCap });
+    }
+  });
+
+  draw();
+  alert(`Flot maximal (1ère itération) : ${minCap}\nArc minimal coloré : ${arcMinDeb} → ${arcMinFin}`);
+}
+
+
+
+  draw();
+  refreshNodeTable();
+  refreshArcTable();
+</script>
+</body>
+</html>
