@@ -98,6 +98,8 @@
       </label>
 
       <button onclick="calculerFlot()">Calculer Flot Max</button>
+      <button onclick="reinitialiserArcs()">🔄 Actualiser</button>
+
       <br><br>
       <label>Départ:</label><input id="start" type="text" size="1" />
       <label>Arrivée:</label><input id="end" type="text" size="1" />
@@ -162,7 +164,7 @@ function draw() {
     path.setAttribute("d", `M${startX} ${startY} L${endX} ${endY}`);
     let className = "arc";
     if (arc.etat === "saturé") className += " saturated";
-    else if (arc.etat === "actif") className += " active";
+    else if (arc.etat === "bloqué") className += " active";
     path.setAttribute("class", arc.highlight ? className + " highlighted" : className);
 
     path.setAttribute("marker-end", "url(#arrow)");
@@ -422,7 +424,7 @@ function draw() {
 
       let tdEtat = document.createElement("td");
       let selectEtat = document.createElement("select");
-      ["initial", "actif", "saturé"].forEach(val => {
+      ["initial", "bloqué", "saturé"].forEach(val => {
         let opt = document.createElement("option");
         opt.value = val;
         opt.textContent = val;
@@ -462,28 +464,60 @@ function draw() {
     }
   }
 
-  function bfs(sourceId, sinkId) {
-    let queue = [sourceId];
-    let parents = {};
-    while (queue.length) {
-      let current = queue.shift();
-      for (let arc of arcs) {
-        if (
-          arc.source.id === current &&
-          arc.cap > 0 &&
-          !(arc.target.id in parents) &&
-          arc.target.id !== sourceId
-        ) {
-          parents[arc.target.id] = arc;
-          if (arc.target.id === sinkId) return parents;
-          queue.push(arc.target.id);
-        }
+  //rechercher chemin possible (qui n'a pas de l'arcs saturé ni bloqué)
+  function findAllPaths(startId, endId) {
+  let results = [];
+
+  function dfs(currentNode, path) {
+    if (currentNode === endId) {
+      results.push(path.join("->"));
+      return;
+    }
+
+    for (let arc of arcs) {
+      if (
+        arc.source.id === currentNode &&
+        arc.etat !== "saturé" &&
+        arc.etat !== "bloqué" &&
+        !path.includes(arc.target.id)
+      ) {
+        dfs(arc.target.id, [...path, arc.target.id]);
       }
     }
-    return null;
   }
 
+  dfs(startId, [startId]);
+  return results;
+}
+
+//recherche minimum
+function trouverArcMinimum() {
+  let arcMin = null;
+  let minVal = Infinity;
+
+  for (let arc of arcs) {
+    if (arc.restant > 0 && arc.etat === "initial" && arc.restant < minVal) {
+      minVal = arc.restant;
+      arcMin = arc;
+    }
+  }
+
+  return arcMin;
+}
+
+
 function calculerFlot() {
+    // ✅ Trouver l'arc avec le restant minimal
+  let arcMinRestant = trouverArcMinimum();
+  if (arcMinRestant) {
+    alert(
+      `Arc avec le restant minimal :\n` +
+      `(${arcMinRestant.source.id} → ${arcMinRestant.target.id}) = ${arcMinRestant.restant}`
+    );
+  } else {
+    alert("Aucun arc disponible avec un restant > 0 !");
+  }
+
   let sourceId = document.getElementById("start").value.toUpperCase().trim();
   let sinkId = document.getElementById("end").value.toUpperCase().trim();
 
@@ -491,6 +525,14 @@ function calculerFlot() {
   if (!nodes.find(n => n.id === sinkId)) return alert("Nœud d'arrivée invalide !");
   if (sourceId === sinkId) return alert("Le nœud de départ et d'arrivée doivent être différents !");
   if (arcs.length === 0) return alert("Aucun arc pour le calcul !");
+
+  // Afficher tous les chemins valides du départ à l'arrivée
+  let chemins = findAllPaths(sourceId, sinkId);
+  if (chemins.length === 0) {
+    alert("Aucun chemin valide (sans arcs saturés ou bloqués) trouvé entre " + sourceId + " et " + sinkId);
+  } else {
+    alert("Chemins valides du départ à l'arrivée :\n" + chemins.join("\n"));
+  }
 
   let residuals = [];
   for (let arc of arcs) {
@@ -564,7 +606,7 @@ function calculerFlot() {
     for (let arc of path) {
       let a = arcs.find(x => x.source.id === arc.source && x.target.id === arc.target);
       if (a) {
-        a.etat = arc.cap === 0 ? "saturé" : "actif";
+        a.etat = arc.cap === 0 ? "saturé" : "bloqué";
       }
     }
 
@@ -578,7 +620,15 @@ function calculerFlot() {
 }
 
 
-
+//remmettre la valeur du restant = valeur de la capacité et etat à initial
+function reinitialiserArcs() {
+  arcs.forEach(arc => {
+    arc.restant = arc.cap;
+    arc.etat = "initial";
+  });
+  draw();
+  refreshArcTable();
+}
 
 
   draw();
