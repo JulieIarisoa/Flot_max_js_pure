@@ -78,18 +78,24 @@
   stroke: red;
   stroke-width: 3px;
 }
+.arc.active {
+  stroke: green;
+}
+.arc.saturated {
+  stroke: gray;
+}
+
 </style>
 </head>
 <body>
   <div id="left-panel">
-    <div id="controls"><label>
-        <input type="radio" name="mode" value="node" checked onchange="mode = 'node'">
-        Ajouter Noeud
-        </label>
-        <label style="margin-left: 10px;">
-        <input type="radio" name="mode" value="arc" onchange="mode = 'arc'">
-        Ajouter Arc
-        </label>
+    <div id="controls">
+      <label>
+        <input type="radio" name="mode" value="node" checked onchange="mode = 'node'">Ajouter Noeud
+      </label>
+      <label style="margin-left: 10px;">
+        <input type="radio" name="mode" value="arc" onchange="mode = 'arc'">Ajouter Arc
+      </label>
 
       <button onclick="calculerFlot()">Calculer Flot Max</button>
       <br><br>
@@ -111,7 +117,7 @@
     <h3>Liste des Arcs</h3>
     <table id="arc-table">
       <thead>
-        <tr><th>Début</th><th>Fin</th><th>Capacité</th><th>Actions</th></tr>
+        <tr><th>Début</th><th>Fin</th><th>Capacité</th><th>Restant</th><th>État</th><th>Actions</th></tr>
       </thead>
       <tbody></tbody>
     </table>
@@ -154,7 +160,11 @@ function draw() {
     // ligne
     let path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", `M${startX} ${startY} L${endX} ${endY}`);
-    path.setAttribute("class", arc.highlight ? "arc highlighted" : "arc");
+    let className = "arc";
+    if (arc.etat === "saturé") className += " saturated";
+    else if (arc.etat === "actif") className += " active";
+    path.setAttribute("class", arc.highlight ? className + " highlighted" : className);
+
     path.setAttribute("marker-end", "url(#arrow)");
 
     // ⚙️ Modifier capacité
@@ -238,24 +248,32 @@ function draw() {
     }
   };
 
-  svg.onmouseup = e => {
-    if (mode === "arc" && selectedNode) {
-      let targetNode = nodes.find(n => Math.hypot(n.x - e.offsetX, n.y - e.offsetY) < 20);
-      if (targetNode && targetNode !== selectedNode) {
-        let capStr = prompt("Capacité de l'arc:", "10");
-        let cap = Number(capStr);
-        if (capStr !== null && !isNaN(cap) && cap >= 0) {
-          arcs.push({ source: selectedNode, target: targetNode, cap });
-          draw();
-          refreshArcTable();
-        } else {
-          alert("Capacité invalide !");
-        }
+ svg.onmouseup = e => {
+  if (mode === "arc" && selectedNode) {
+    let targetNode = nodes.find(n => Math.hypot(n.x - e.offsetX, n.y - e.offsetY) < 20);
+    if (targetNode && targetNode !== selectedNode) {
+      let capStr = prompt("Capacité de l'arc:", "10");
+      let cap = Number(capStr);
+      if (capStr !== null && !isNaN(cap) && cap >= 0) {
+        arcs.push({
+          source: selectedNode,
+          target: targetNode,
+          cap,
+          restant: cap,  // <-- ici
+          etat: "initial"
+        });
+
+        draw();
+        refreshArcTable();
+      } else {
+        alert("Capacité invalide !");
       }
-      selectedNode = null;
     }
-    draggingNode = null;
-  };
+    selectedNode = null;
+  }
+  draggingNode = null;
+};
+
 
   svg.onmousemove = e => {
     if (draggingNode) {
@@ -382,6 +400,41 @@ function draw() {
       });
       tdCap.appendChild(inputCap);
       tr.appendChild(tdCap);
+    // Colonne "Restant"
+    let tdRestant = document.createElement("td");
+    let inputRestant = document.createElement("input");
+    inputRestant.type = "number";
+    inputRestant.min = 0;
+    inputRestant.value = arc.restant;
+    inputRestant.style.width = "60px";
+    inputRestant.addEventListener("change", () => {
+      let val = Number(inputRestant.value);
+      if (isNaN(val) || val < 0 || val > arc.cap) {
+        alert("Valeur restante invalide ! Elle doit être comprise entre 0 et la capacité.");
+        inputRestant.value = arc.restant;
+      } else {
+        arc.restant = val;
+        draw();
+      }
+    });
+    tdRestant.appendChild(inputRestant);
+    tr.appendChild(tdRestant);
+
+      let tdEtat = document.createElement("td");
+      let selectEtat = document.createElement("select");
+      ["initial", "actif", "saturé"].forEach(val => {
+        let opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = val;
+        if (val === arc.etat) opt.selected = true;
+        selectEtat.appendChild(opt);
+      });
+      selectEtat.addEventListener("change", () => {
+        arc.etat = selectEtat.value;
+      });
+      tdEtat.appendChild(selectEtat);
+      tr.appendChild(tdEtat);
+
 
       let tdActions = document.createElement("td");
       let btnSuppr = document.createElement("button");
@@ -439,88 +492,92 @@ function calculerFlot() {
   if (sourceId === sinkId) return alert("Le nœud de départ et d'arrivée doivent être différents !");
   if (arcs.length === 0) return alert("Aucun arc pour le calcul !");
 
-  // Construction du graphe résiduel
-  let residuals = arcs.map(a => ({
-    source: a.source.id,
-    target: a.target.id,
-    cap: a.cap
-  }));
+  let residuals = [];
+  for (let arc of arcs) {
+    residuals.push({ source: arc.source.id, target: arc.target.id, cap: arc.cap });
+  }
 
   function findResidualArc(u, v) {
     return residuals.find(a => a.source === u && a.target === v);
   }
 
-  // Réinitialiser tous les arcs
-  arcs.forEach(a => a.highlight = false);
+  let totalFlow = 0;
+  let iteration = 0;
 
-  // BFS pour trouver un chemin augmentant
-  let queue = [sourceId];
-  let parents = {};
-  let visited = new Set([sourceId]);
-  let foundPath = false;
+  while (true) {
+    let queue = [sourceId];
+    let parents = {};
+    let visited = new Set([sourceId]);
+    let foundPath = false;
 
-  while (queue.length && !foundPath) {
-    let current = queue.shift();
-    for (let arc of residuals) {
-      if (arc.source === current && arc.cap > 0 && !visited.has(arc.target)) {
-        parents[arc.target] = arc;
-        if (arc.target === sinkId) {
-          foundPath = true;
-          break;
-        }
-        queue.push(arc.target);
-        visited.add(arc.target);
-      }
-    }
-  }
-
-  if (!foundPath) {
-    alert(`Aucun chemin trouvable entre ${sourceId} et ${sinkId}`);
-    draw();
-    return;
-  }
-
-  // Reconstruction du chemin et recherche du min
-  let path = [];
-  let minCap = Infinity;
-  for (let v = sinkId; v !== sourceId;) {
-    let arc = parents[v];
-    path.push(arc);
-    if (arc.cap < minCap) minCap = arc.cap;
-    v = arc.source;
-  }
-
-  // Colorier en rouge l’arc qui a minCap et enregistrer ses coordonnées
-  let arcMinDeb = null;
-  let arcMinFin = null;
-  for (let p of path) {
-    if (p.cap === minCap) {
-      for (let a of arcs) {
-        if (a.source.id === p.source && a.target.id === p.target) {
-          a.highlight = true;
-          arcMinDeb = a.source.id;
-          arcMinFin = a.target.id;
-          break;
+    while (queue.length && !foundPath) {
+      let current = queue.shift();
+      for (let arc of residuals) {
+        if (arc.source === current && arc.cap > 0 && !visited.has(arc.target)) {
+          parents[arc.target] = arc;
+          if (arc.target === sinkId) {
+            foundPath = true;
+            break;
+          }
+          queue.push(arc.target);
+          visited.add(arc.target);
         }
       }
-      break; // Ne colorier qu’un seul arc
     }
-  }
 
-  // Mise à jour du graphe résiduel
-  path.forEach(a => {
-    a.cap -= minCap;
-    let retour = findResidualArc(a.target, a.source);
-    if (retour) {
-      retour.cap += minCap;
-    } else {
-      residuals.push({ source: a.target, target: a.source, cap: minCap });
+    if (!foundPath) break;
+
+    let path = [];
+    let minCap = Infinity;
+    let arcMin = null;
+    let details = [];
+
+    for (let v = sinkId; v !== sourceId;) {
+      let arc = parents[v];
+      path.push(arc);
+      details.push(`(${arc.source} → ${arc.target}): ${arc.cap}`);
+      if (arc.cap < minCap) {
+        minCap = arc.cap;
+        arcMin = arc;
+      }
+      v = arc.source;
     }
-  });
+
+    // ✅ 1er alert : tous les arcs parcourus avec leurs capacités
+    alert(`Itération ${iteration + 1} :\n` + details.join('\n'));
+
+    // ✅ 2e alert : l’arc avec la capacité minimale
+    if (arcMin) {
+      alert(`Minimum = ${minCap} sur l'arc (${arcMin.source} → ${arcMin.target})`);
+    }
+
+    for (let arc of path) {
+      arc.cap -= minCap;
+      let retour = findResidualArc(arc.target, arc.source);
+      if (retour) {
+        retour.cap += minCap;
+      } else {
+        residuals.push({ source: arc.target, target: arc.source, cap: minCap });
+      }
+    }
+
+    for (let arc of path) {
+      let a = arcs.find(x => x.source.id === arc.source && x.target.id === arc.target);
+      if (a) {
+        a.etat = arc.cap === 0 ? "saturé" : "actif";
+      }
+    }
+
+    totalFlow += minCap;
+    iteration++;
+  }
 
   draw();
-  alert(`Flot maximal (1ère itération) : ${minCap}\nArc minimal coloré : ${arcMinDeb} → ${arcMinFin}`);
+  refreshArcTable();
+  alert(`✅ Flot maximal total : ${totalFlow} (en ${iteration} itération${iteration > 1 ? 's' : ''})`);
 }
+
+
 
 
 
