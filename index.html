@@ -120,6 +120,19 @@
       </thead>
       <tbody></tbody>
     </table>
+    
+    <h3>Suivi du Flot</h3>
+    <table id="flot-table">
+      <thead>
+        <tr>
+          <th>Début</th>
+          <th>Fin</th>
+          <th>Capacité</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
   </div>
 
 <script>
@@ -472,6 +485,67 @@ function reinitialiserArcs() {
 }
 
 
+
+
+/*suivi du tableau**/
+let indexEtape = 1;
+
+// Initialiser le tableau de suivi au début
+function initialiserTableauSuivi() {
+  const table = document.getElementById("flot-table");
+  const thead = table.querySelector("thead");
+  const tbody = table.querySelector("tbody");
+
+  // Réinitialise
+  thead.innerHTML = `<tr>
+    <th>Début</th><th>Fin</th><th>Capacité</th>
+  </tr>`;
+  tbody.innerHTML = "";
+
+  // Ajoute les lignes (une par arc)
+  arcs.forEach(arc => {
+    let tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${arc.source.id}</td>
+      <td>${arc.target.id}</td>
+      <td>${arc.cap}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  indexEtape = 1; // on recommence les étapes
+}
+
+// Ajouter une nouvelle colonne de suivi
+function ajouterColonneSuivi() {
+  const thead = document.querySelector("#flot-table thead tr");
+  const tbody = document.querySelector("#flot-table tbody");
+
+  // Créer un nouvel en-tête
+  const th = document.createElement("th");
+  th.textContent = `Étape ${indexEtape++}`;
+  thead.appendChild(th);
+
+  // Ajouter les valeurs correspondantes
+  arcs.forEach((arc, idx) => {
+    const tr = tbody.children[idx];
+    const td = document.createElement("td");
+
+    if (arc.etat === "bloqué") {
+      td.textContent = "B";
+      td.style.backgroundColor = "#ccc";
+    } else if (arc.etat === "saturé") {
+      td.textContent = "S";
+      td.style.backgroundColor = "#f8d7da";
+    } else {
+      td.textContent = arc.restant;
+    }
+
+    tr.appendChild(td);
+  });
+}
+
+
 /*Fonction recherchon l'arc portans le valeur minimum restant et en etat initial pas bloque ni saturé
  et ainsi retourner le coordonnée(deb, fin) avec le valeur restant de l'arc*/
 function minimum() {
@@ -611,6 +685,8 @@ function calculerFlot() {
     return;
   }
 
+  initialiserTableauSuivi(); // 🔁 Réinitialise le nouveau tableau
+
   while (verifierEtat()) {
     let min = minimum();
     if (!min) break;
@@ -623,6 +699,7 @@ function calculerFlot() {
       min.arc.etat = "saturé";
       addColonne();
     }
+     ajouterColonneSuivi(); // ➕ Ajoute une colonne après chaque étape
   }
 
   draw();
