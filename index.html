@@ -74,16 +74,13 @@
   button {
     cursor: pointer;
   }
-  .arc.highlighted {
-  stroke: red;
-  stroke-width: 3px;
-}
-.arc.active {
-  stroke: green;
-}
-.arc.saturated {
-  stroke: gray;
-}
+  .arc.active {
+    stroke: green;
+  }
+  .arc.saturated {
+    stroke: red;
+    stroke-width: 2px;
+  }
 
 </style>
 </head>
@@ -97,7 +94,7 @@
         <input type="radio" name="mode" value="arc" onchange="mode = 'arc'">Ajouter Arc
       </label>
 
-      <button onclick="calculerFlot()">Calculer Flot Max</button>
+      <button onclick="executerFlotTotal()">Calculer Flot Max</button>
       <button onclick="reinitialiserArcs()">🔄 Actualiser</button>
 
       <br><br>
@@ -464,40 +461,14 @@ function draw() {
     }
   }
 
-  //rechercher chemin possible (qui n'a pas de l'arcs saturé ni bloqué)
-  function findAllPaths(startId, endId) {
-  let results = [];
-
-  function dfs(currentNode, path) {
-    if (currentNode === endId) {
-      results.push(path.join("->"));
-      return;
-    }
-
-    for (let arc of arcs) {
-      if (
-        arc.source.id === currentNode &&
-        arc.etat !== "saturé" &&
-        arc.etat !== "bloqué" &&
-        !path.includes(arc.target.id)
-      ) {
-        dfs(arc.target.id, [...path, arc.target.id]);
-      }
-    }
-  }
-
-  dfs(startId, [startId]);
-  return results;
-}
-
-//recherche minimum
-function trouverArcMinimum() {
+  //recherche minimum
+function rechercheMinimum() {
   let arcMin = null;
-  let minVal = Infinity;
+  let minRestant = Infinity;
 
   for (let arc of arcs) {
-    if (arc.restant > 0 && arc.etat === "initial" && arc.restant < minVal) {
-      minVal = arc.restant;
+    if (arc.restant > 0 && arc.etat === "initial" && arc.restant < minRestant) {
+      minRestant = arc.restant;
       arcMin = arc;
     }
   }
@@ -505,118 +476,174 @@ function trouverArcMinimum() {
   return arcMin;
 }
 
+///recherche chemin
+function rechercheChemin(minimumArc) {
+  let startId = document.getElementById("start").value.toUpperCase().trim();
+  let endId = document.getElementById("end").value.toUpperCase().trim();
 
-function calculerFlot() {
-    // ✅ Trouver l'arc avec le restant minimal
-  let arcMinRestant = trouverArcMinimum();
-  if (arcMinRestant) {
+  if (!startId || !endId || startId === endId) {
+    alert("Départ ou arrivée invalide !");
+    return;
+  }
+
+  let cheminsValides = [];
+
+  function dfs(currentNode, path, arcPath) {
+    if (currentNode === endId) {
+      if (arcPath.includes(minimumArc)) {
+        cheminsValides.push([...path]);
+      }
+      return;
+    }
+
+    for (let arc of arcs) {
+      if (
+        arc.source.id === currentNode &&
+        arc.etat === "initial" &&
+        arc.restant > 0 &&
+        !path.includes(arc.target.id)
+      ) {
+        path.push(arc.target.id);
+        arcPath.push(arc);
+        dfs(arc.target.id, path, arcPath);
+        path.pop();
+        arcPath.pop();
+      }
+    }
+  }
+
+  dfs(startId, [startId], []);
+
+  // ✅ TRIER les chemins par ordre croissant du nombre de sommets
+  cheminsValides.sort((a, b) => a.length - b.length);
+
+  if (cheminsValides.length > 0) {
     alert(
-      `Arc avec le restant minimal :\n` +
-      `(${arcMinRestant.source.id} → ${arcMinRestant.target.id}) = ${arcMinRestant.restant}`
+      `✔️ Chemin(s) contenant l'arc minimum (${minimumArc.source.id} → ${minimumArc.target.id}) = ${minimumArc.restant} :\n` +
+      cheminsValides.map(p => p.join(" -> ")).join("\n")
     );
   } else {
-    alert("Aucun arc disponible avec un restant > 0 !");
+    alert("❌ Aucun chemin contenant l'arc minimum trouvé.");
   }
 
-  let sourceId = document.getElementById("start").value.toUpperCase().trim();
-  let sinkId = document.getElementById("end").value.toUpperCase().trim();
+  // 👉 (optionnel) Mettre en évidence visuellement
+  arcs.forEach(a => a.highlight = false);
+  if (minimumArc) {
+    minimumArc.highlight = true;
+  }
+  draw();
 
-  if (!nodes.find(n => n.id === sourceId)) return alert("Nœud de départ invalide !");
-  if (!nodes.find(n => n.id === sinkId)) return alert("Nœud d'arrivée invalide !");
-  if (sourceId === sinkId) return alert("Le nœud de départ et d'arrivée doivent être différents !");
-  if (arcs.length === 0) return alert("Aucun arc pour le calcul !");
+  return cheminsValides;
+}
 
-  // Afficher tous les chemins valides du départ à l'arrivée
-  let chemins = findAllPaths(sourceId, sinkId);
-  if (chemins.length === 0) {
-    alert("Aucun chemin valide (sans arcs saturés ou bloqués) trouvé entre " + sourceId + " et " + sinkId);
-  } else {
-    alert("Chemins valides du départ à l'arrivée :\n" + chemins.join("\n"));
+
+
+function appliquerChemin(chemins) {
+  if (!chemins || chemins.length === 0) return;
+
+  // 👇 Tu peux ici en choisir un (ex: le premier chemin)
+  let chemin = chemins[0]; // Ex: ["A", "B", "D", "F"]
+
+  // 🔎 Récupère les arcs correspondant au chemin
+  let arcsDuChemin = [];
+  for (let i = 0; i < chemin.length - 1; i++) {
+    let arc = arcs.find(a =>
+      a.source.id === chemin[i] &&
+      a.target.id === chemin[i + 1] &&
+      a.etat === "initial" &&
+      a.restant > 0
+    );
+    if (arc) arcsDuChemin.push(arc);
+    else return alert("Arc manquant ou non disponible entre " + chemin[i] + " et " + chemin[i+1]);
   }
 
-  let residuals = [];
-  for (let arc of arcs) {
-    residuals.push({ source: arc.source.id, target: arc.target.id, cap: arc.cap });
+  // 💧 Trouver le minimum (le goulot d'étranglement)
+  let minRestant = Math.min(...arcsDuChemin.map(a => a.restant));
+
+  // 🧮 Appliquer le flot
+  arcsDuChemin.forEach(arc => {
+    arc.restant -= minRestant;
+    if (arc.restant === 0) arc.etat = "saturé";
+    else arc.etat = "initial";
+  });
+
+  alert(
+    `✔️ Chemin appliqué : ${chemin.join(" -> ")}\n` +
+    `Débit appliqué : ${minRestant}`
+  );
+
+  draw();
+  refreshArcTable();
+}
+
+
+
+
+function calculerFlot() {
+  let arcMin = rechercheMinimum();
+  if (!arcMin) {
+    alert("❌ Aucun arc avec un restant > 0 !");
+    return;
   }
 
-  function findResidualArc(u, v) {
-    return residuals.find(a => a.source === u && a.target === v);
+  let cheminsTrouvés = rechercheChemin(arcMin);
+
+  if (cheminsTrouvés.length === 0) {
+    alert("❌ Aucun chemin valide trouvé !");
+    return;
   }
 
-  let totalFlow = 0;
-  let iteration = 0;
+  appliquerChemin(cheminsTrouvés); // ✅ déduit automatiquement le flux et met à jour les arcs
+}
+
+function executerFlotTotal() {
+  let totalFlot = 0;
+  let iteration = 1;
 
   while (true) {
-    let queue = [sourceId];
-    let parents = {};
-    let visited = new Set([sourceId]);
-    let foundPath = false;
+    // 1. Trouver un arc minimum encore utilisable
+    let arcMin = rechercheMinimum();
+    if (!arcMin) break; // ✅ arrêt si plus d'arc utilisable
 
-    while (queue.length && !foundPath) {
-      let current = queue.shift();
-      for (let arc of residuals) {
-        if (arc.source === current && arc.cap > 0 && !visited.has(arc.target)) {
-          parents[arc.target] = arc;
-          if (arc.target === sinkId) {
-            foundPath = true;
-            break;
-          }
-          queue.push(arc.target);
-          visited.add(arc.target);
-        }
+    // 2. Trouver un chemin contenant cet arc
+    let cheminsTrouvés = rechercheChemin(arcMin);
+    if (!cheminsTrouvés || cheminsTrouvés.length === 0) break;
+
+    // 3. Récupérer les arcs du premier chemin
+    let chemin = cheminsTrouvés[0];
+    let arcsDuChemin = [];
+
+    for (let i = 0; i < chemin.length - 1; i++) {
+      let arc = arcs.find(a =>
+        a.source.id === chemin[i] &&
+        a.target.id === chemin[i + 1] &&
+        a.etat === "initial" &&
+        a.restant > 0
+      );
+      if (arc) arcsDuChemin.push(arc);
+      else {
+        console.warn("Chemin interrompu à l'étape " + i);
+        return;
       }
     }
 
-    if (!foundPath) break;
+    // 4. Calcul du minimum (bottleneck)
+    let minRestant = Math.min(...arcsDuChemin.map(a => a.restant));
+    totalFlot += minRestant;
 
-    let path = [];
-    let minCap = Infinity;
-    let arcMin = null;
-    let details = [];
+    // 5. Appliquer le flot à chaque arc
+    arcsDuChemin.forEach(arc => {
+      arc.restant -= minRestant;
+      arc.etat = arc.restant === 0 ? "saturé" : "initial";
+    });
 
-    for (let v = sinkId; v !== sourceId;) {
-      let arc = parents[v];
-      path.push(arc);
-      details.push(`(${arc.source} → ${arc.target}): ${arc.cap}`);
-      if (arc.cap < minCap) {
-        minCap = arc.cap;
-        arcMin = arc;
-      }
-      v = arc.source;
-    }
-
-    // ✅ 1er alert : tous les arcs parcourus avec leurs capacités
-    alert(`Itération ${iteration + 1} :\n` + details.join('\n'));
-
-    // ✅ 2e alert : l’arc avec la capacité minimale
-    if (arcMin) {
-      alert(`Minimum = ${minCap} sur l'arc (${arcMin.source} → ${arcMin.target})`);
-    }
-
-    for (let arc of path) {
-      arc.cap -= minCap;
-      let retour = findResidualArc(arc.target, arc.source);
-      if (retour) {
-        retour.cap += minCap;
-      } else {
-        residuals.push({ source: arc.target, target: arc.source, cap: minCap });
-      }
-    }
-
-    for (let arc of path) {
-      let a = arcs.find(x => x.source.id === arc.source && x.target.id === arc.target);
-      if (a) {
-        a.etat = arc.cap === 0 ? "saturé" : "bloqué";
-      }
-    }
-
-    totalFlow += minCap;
+    console.log(`🔁 Iteration ${iteration}: ${chemin.join(" -> ")} | flot appliqué: ${minRestant}`);
     iteration++;
   }
 
   draw();
   refreshArcTable();
-  alert(`✅ Flot maximal total : ${totalFlow} (en ${iteration} itération${iteration > 1 ? 's' : ''})`);
+  alert("✅ Flot maximal total appliqué : " + totalFlot);
 }
 
 
