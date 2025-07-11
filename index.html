@@ -31,8 +31,8 @@
     cursor: grab;
   }
   .node {
-    fill: #2196F3;
-    stroke: #fff;
+    fill: #ffffff;
+    stroke: #2c2c2c;
     stroke-width: 2px;
     cursor: pointer;
   }
@@ -75,10 +75,10 @@
     cursor: pointer;
   }
   .arc.active {
-    stroke: green;
+    stroke: #2196F3;
   }
   .arc.saturated {
-    stroke: red;
+    stroke: #f32121;
     stroke-width: 2px;
   }
 
@@ -97,6 +97,7 @@
       <button onclick="calculerFlot()">Calculer Flot complet</button>
       <button onclick="reinitialiserArcs()">🔄 Actualiser</button>
 
+
       <br><br>
       <label>Départ:</label><input id="start" type="text" size="1" />
       <label>Arrivée:</label><input id="end" type="text" size="1" />
@@ -105,7 +106,9 @@
   </div>
 
   <div id="right-panel">
-    <h3>Liste des Nœuds</h3>
+    <center>
+      <h3>Liste des Nœuds</h3>
+    </center>
     <table id="node-table">
       <thead>
         <tr><th>Nom</th><th>Actions</th></tr>
@@ -113,7 +116,9 @@
       <tbody></tbody>
     </table>
 
-    <h3>Liste des Arcs</h3>
+    <center>
+      <h3>Liste des Arcs</h3>
+    </center>
     <table id="arc-table">
       <thead>
         <tr><th>Début</th><th>Fin</th><th>Capacité</th><th>Restant</th><th>État</th><th>Actions</th></tr>
@@ -121,13 +126,15 @@
       <tbody></tbody>
     </table>
     
-    <h3>Suivi du Flot</h3>
+    <center>
+      <h3>Suivi du Flot</h3>
+    </center>
     <table id="flot-table">
       <thead>
         <tr>
-          <th>Début</th>
+          <th>Déb</th>
           <th>Fin</th>
-          <th>Capacité</th>
+          <th>Cap</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -214,7 +221,7 @@ function draw() {
     text.setAttribute("x", midX);
     text.setAttribute("y", midY);
     text.setAttribute("class", "label");
-    text.textContent = arc.cap;
+    text.textContent = arc.cap - arc.restant;
     svg.appendChild(text);
   });
 
@@ -353,7 +360,7 @@ function draw() {
 
       let tdAction = document.createElement("td");
       let btnSuppr = document.createElement("button");
-      btnSuppr.textContent = "Supprimer";
+      btnSuppr.textContent = "Suppr";
       btnSuppr.onclick = () => {
         if (confirm(`Supprimer le noeud ${node.id} ?`)) {
           arcs = arcs.filter(a => a.source !== node && a.target !== node);
@@ -450,7 +457,7 @@ function draw() {
 
       let tdActions = document.createElement("td");
       let btnSuppr = document.createElement("button");
-      btnSuppr.textContent = "Supprimer";
+      btnSuppr.textContent = "Suppr";
       btnSuppr.onclick = () => {
         if (confirm(`Supprimer l'arc ${arc.source.id} → ${arc.target.id} ?`)) {
           arcs.splice(idx, 1);
@@ -498,7 +505,7 @@ function initialiserTableauSuivi() {
 
   // Réinitialise
   thead.innerHTML = `<tr>
-    <th>Début</th><th>Fin</th><th>Capacité</th>
+    <th>Déb</th><th>Fin</th><th>Cap</th>
   </tr>`;
   tbody.innerHTML = "";
 
@@ -517,16 +524,14 @@ function initialiserTableauSuivi() {
 }
 
 // Ajouter une nouvelle colonne de suivi
-function ajouterColonneSuivi() {
+function ajouterColonneSuivi(minArcUtilise) {
   const thead = document.querySelector("#flot-table thead tr");
   const tbody = document.querySelector("#flot-table tbody");
 
-  // Créer un nouvel en-tête
   const th = document.createElement("th");
-  th.textContent = `Étape ${indexEtape++}`;
+  th.textContent = `${indexEtape++}`;
   thead.appendChild(th);
 
-  // Ajouter les valeurs correspondantes
   arcs.forEach((arc, idx) => {
     const tr = tbody.children[idx];
     const td = document.createElement("td");
@@ -541,10 +546,15 @@ function ajouterColonneSuivi() {
       td.textContent = arc.restant;
     }
 
+    // 🌟 Colorier en bleu si c’est l’arc minimum utilisé dans ce tour
+    if (arc === minArcUtilise) {
+      td.style.backgroundColor = "#cce5ff"; // bleu clair
+      td.textContent = arc.restant;
+    }
+
     tr.appendChild(td);
   });
 }
-
 
 /*Fonction recherchon l'arc portans le valeur minimum restant et en etat initial pas bloque ni saturé
  et ainsi retourner le coordonnée(deb, fin) avec le valeur restant de l'arc*/
@@ -641,6 +651,7 @@ le deuxième colonne:capacité initial; troisième colone valeur du restant apr�
 NB: si bloque: valeur du ligne devient B depuis la colonne qu'elle devient bloque et l'avant ne change pas
 si saturé valeur du ligne devient S depuis la colonne qu'elle devient saturé et l'avant ne change pas
 */
+/*
 let colonneIndex = 1; // Commence à 1 car la première colonne est l'état initial
 
 function addColonne() {
@@ -659,7 +670,8 @@ function addColonne() {
 
     row.appendChild(td);
   });
-}
+}*/
+
 
 
 /*cette fonction calcul le flot complet
@@ -697,9 +709,9 @@ function calculerFlot() {
     } else {
       soustraction(chemin, min.valeur);
       min.arc.etat = "saturé";
-      addColonne();
+      //addColonne();
     }
-     ajouterColonneSuivi(); // ➕ Ajoute une colonne après chaque étape
+     ajouterColonneSuivi(min.arc); // ➕ Ajoute une colonne après chaque étape
   }
 
   draw();
