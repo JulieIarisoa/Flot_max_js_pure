@@ -4,103 +4,37 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Flot Maximal - Graphes avec flèches orientées</title>
-<style>
-  body {
-    font-family: sans-serif;
-    margin: 0;
-    display: flex;
-    height: 100vh;
-    overflow: hidden;
-  }
-  #left-panel {
-    flex: 1;
-    position: relative;
-  }
-  #controls {
-    position: absolute;
-    top: 10px; left: 10px;
-    background: #f0f0f0;
-    padding: 10px;
-    border-radius: 8px;
-    z-index: 20;
-  }
-  svg {
-    width: 100%;
-    height: 100vh;
-    background-color: #fafafa;
-    cursor: grab;
-  }
-  .node {
-    fill: #ffffff;
-    stroke: #2c2c2c;
-    stroke-width: 2px;
-    cursor: pointer;
-  }
-  .arc {
-    stroke: #555;
-    stroke-width: 2px;
-    marker-end: url(#arrow);
-  }
-  .label {
-    fill: #000;
-    font-size: 14px;
-    pointer-events: none;
-  }
-  #right-panel {
-    width: 400px;
-    overflow-y: auto;
-    border-left: 1px solid #ddd;
-    padding: 10px;
-    box-sizing: border-box;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 20px;
-  }
-  table th, table td {
-    border: 1px solid #ccc;
-    padding: 6px 8px;
-    text-align: center;
-  }
-  table th {
-    background-color: #eee;
-  }
-  input[type="text"], input[type="number"], select {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 4px;
-  }
-  button {
-    cursor: pointer;
-  }
-  .arc.active {
-    stroke: #2196F3;
-  }
-  .arc.saturated {
-    stroke: #f32121;
-    stroke-width: 2px;
-  }
-
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="left-panel">
-    <div id="controls">
-      <label>
-        <input type="radio" name="mode" value="node" checked onchange="mode = 'node'">Ajouter Noeud
-      </label>
-      <label style="margin-left: 10px;">
-        <input type="radio" name="mode" value="arc" onchange="mode = 'arc'">Ajouter Arc
-      </label>
+    <h1 id="titre">Recherche opérationnelle</h1>
+    <div id="tete">
+      <div id="controls">
+        <label>
+          <input type="radio" name="mode" value="node" checked onchange="mode = 'node'">Ajouter Noeud
+        </label>
+        <label style="margin-left: 10px;">
+          <input type="radio" name="mode" value="arc" onchange="mode = 'arc'">Ajouter Arc
+        </label>
 
-      <button onclick="calculerFlot()">Calculer Flot complet</button>
-      <button onclick="reinitialiserArcs()">🔄 Actualiser</button>
+        <button onclick="reinitialiserArcs()" id="actualiser"><img src="refresh.png" alt="actualiser"> Actualiser</button>
 
 
-      <br><br>
-      <label>Départ:</label><input id="start" type="text" size="1" />
-      <label>Arrivée:</label><input id="end" type="text" size="1" />
+        <br><br>
+        <label>Départ:</label><input id="start" type="text" size="1" />
+        <label>Arrivée:</label><input id="end" type="text" size="1" />
+        <button onclick="calculerFlot()" id="flotCompl">Calculer Flot complet</button>
+      </div>
+      <div><h2>Flot Maximal</h2>
+        <p>Total flot maximal =<span id="flot-resultat-max"></span></p>
+      </div>
+      <div id="legende">
+        <h5>Légende</h5>
+        <button id="initial">Initial</button>
+        <button id="sature">Saturé</button>
+        <button id="bloque">Bloqué</button>
+      </div>
     </div>
     <svg id="svg"></svg>
   </div>
@@ -222,6 +156,7 @@ function draw() {
     text.setAttribute("y", midY);
     text.setAttribute("class", "label");
     text.textContent = arc.cap - arc.restant;
+    
     svg.appendChild(text);
   });
 
@@ -492,7 +427,20 @@ function reinitialiserArcs() {
 }
 
 
+/*camculer flot total*/
+function totalFlot(id){
+  const depart = document.getElementById("start").value.trim().toUpperCase();
+  if(!depart) return 0;
 
+  let total = 0;
+  arcs.forEach(arc => {
+    if(arc.source.id === depart){
+      total += arc.cap - arc.restant;
+    }
+  });
+
+  document.getElementById(id).textContent = total;
+}
 
 /*suivi du tableau**/
 let indexEtape = 1;
@@ -599,11 +547,11 @@ function verifierChemin(min) {
 
   while (queue.length > 0) {
     let path = queue.shift();
-    let last = path[path.length - 1];
+    let last = path[path.length-1];
 
     if (last === fin) {
       // Vérifie si le chemin passe par min.arc
-      for (let i = 0; i < path.length - 1; i++) {
+      for (let i = 0; i <= path.length ; i++) {
         if (path[i] === min.arc.source.id && path[i+1] === min.arc.target.id) {
           return path;
         }
@@ -651,26 +599,166 @@ le deuxième colonne:capacité initial; troisième colone valeur du restant apr�
 NB: si bloque: valeur du ligne devient B depuis la colonne qu'elle devient bloque et l'avant ne change pas
 si saturé valeur du ligne devient S depuis la colonne qu'elle devient saturé et l'avant ne change pas
 */
-/*
-let colonneIndex = 1; // Commence à 1 car la première colonne est l'état initial
 
-function addColonne() {
-  let table = document.querySelector("#arc-table thead tr");
-  let header = document.createElement("th");
-  header.textContent = `Restant ${colonneIndex++}`;
-  table.appendChild(header);
 
-  document.querySelectorAll("#arc-table tbody tr").forEach((row, idx) => {
-    const arc = arcs[idx];
-    let td = document.createElement("td");
 
-    if (arc.etat === "bloqué") td.textContent = "B";
-    else if (arc.etat === "saturé") td.textContent = "S";
-    else td.textContent = arc.restant;
 
-    row.appendChild(td);
-  });
-}*/
+
+/********************MARQUAGE*******************************************/
+/* le function verifierCheminMarquage() vérifie s'il y a  au moins un chemin 
+possible (deb jusqu'à la fin) qu'on peut créer à partir de l'arc non saturé . 
+NB: cette function ne considére pas le sans du parcour elle juste deduire les sommets lié du
+début jusqu'à la fin dans les arcs non saturé*/
+function verifierCheminMarquage() {
+  const depart = document.getElementById("start").value.trim().toUpperCase();
+  const fin = document.getElementById("end").value.trim().toUpperCase();
+
+  if (!depart || !fin) return null;
+
+  let queue = [[depart]];
+  let visited = new Set();
+
+  while (queue.length > 0) {
+    let path = queue.shift();
+    let last = path[path.length - 1];
+
+    if (last === fin) return path;
+
+    visited.add(last);
+
+    arcs.forEach(arc => {
+      // Cas 1 : arc dans le sens normal et non saturé
+      if (arc.restant > 0 && arc.source.id === last && !visited.has(arc.target.id)) {
+        queue.push([...path, arc.target.id]);
+      }
+
+      // Cas 2 : arc dans le sens inverse, donc retour possible
+      let fluxRetour = arc.cap - arc.restant;
+      if (fluxRetour > 0 && arc.target.id === last && !visited.has(arc.source.id)) {
+        queue.push([...path, arc.source.id]);
+      }
+    });
+  }
+
+  return null; // Aucun chemin trouvé
+}
+
+/*la function arcSensContraire() deduire le valeur(capacité -restant) et coordonée de l'arc qui a un sens
+contraire par rapport aux autre dans le chemin si capacité-restant = 0 retourner impossible de faire cette ammelioration*/
+function arcSensContraire(chemin) {
+  let minRetour = Infinity;
+  let arcRetour = null;
+
+  for (let i = 0; i < chemin.length - 1; i++) {
+    let source = chemin[i];
+    let target = chemin[i + 1];
+
+    let retour = arcs.find(a => a.source.id === target && a.target.id === source);
+    if (retour) {
+      let val = retour.cap - retour.restant;
+      if (val > 0 && val < minRetour) {
+        minRetour = val;
+        arcRetour = retour;
+      }
+    }
+  }
+
+  if (arcRetour === null) return { message: "Impossible d'améliorer : aucun arc retour utilisable." };
+  return { arc: arcRetour, valeur: minRetour };
+}
+
+/*la function amelioration prend en parametre le chemin et la function arcSensContraire().
+Elle fais une soustraction sur le restant de l'arc qui a le sens normal avec la valeur minimum
+ retourner par arcSensContraire() et une addition sur le restant de l'arc qui le sens contraire
+ par rapport aux autre 
+ si arcSensContraire() retourner le message impossible.. alors retourner qu'il n'y aucun amelioration possible*/
+function amelioration(chemin, arcRetourInfo) {
+  if (arcRetourInfo.message) {
+    return arcRetourInfo.message;
+  }
+
+  let minVal = arcRetourInfo.valeur;
+
+  for (let i = 0; i < chemin.length - 1; i++) {
+    let source = chemin[i];
+    let target = chemin[i + 1];
+
+    let arc = arcs.find(a => a.source.id === source && a.target.id === target);
+    if (arc) {
+      arc.restant -= minVal;
+      if (arc.restant <= 0) {
+        arc.restant = 0;
+        arc.etat = "saturé";
+      }
+    }
+
+    // sens inverse
+    let arcRetour = arcs.find(a => a.source.id === target && a.target.id === source);
+    if (arcRetour) {
+      arcRetour.restant += minVal;
+      if (arcRetour.restant > arcRetour.cap) arcRetour.restant = arcRetour.cap;
+      arcRetour.etat = "initial"; // redeviens utilisable
+    }
+  }
+
+  return "amélioration faite";
+}
+
+
+/*la function marquerGraphe() marquer sur le graphe en + pour l'arc en sens normale du chemin 
+et en - pour l'arc en sens contraire sur le chemin qui est mettre en paramettre*/
+function marquerGraphe(chemin) {
+  arcs.forEach(arc => arc.highlight = false); // nettoyage
+
+  for (let i = 0; i < chemin.length - 1; i++) {
+    let source = chemin[i];
+    let target = chemin[i + 1];
+
+    let direct = arcs.find(a => a.source.id === source && a.target.id === target);
+    if (direct) direct.highlight = true;
+
+    let inverse = arcs.find(a => a.source.id === target && a.target.id === source);
+    if (inverse) inverse.highlight = true;
+  }
+
+  draw();
+}
+
+/* le fonction marquage() sélectionner tous les arcs nons saturé s'il n'y a aucun arc initial
+puis appeller verifierCheminMarquage() puis apeller amelioration().
+ si amelioration() retourne le message aucun amelioration possible terminer le marquage, sinon 
+ appeler marquerGraphe() et ajouter un nouveau colonne sur notre tableau suivi de flot qui mett 
+ le valeur du restant de tous les arcs ameliorer
+ et en fin re calucler le fot total*/
+function marquage() {
+  while (true) {
+    let chemin = verifierCheminMarquage();
+    if (!chemin) {
+      console.log("Aucun chemin supplémentaire disponible.");
+      break;
+    }
+
+    let retourInfo = arcSensContraire(chemin);
+    if (retourInfo.message) {
+      console.log(retourInfo.message);
+      break;
+    }
+
+    let resultat = amelioration(chemin, retourInfo);
+    if (resultat === "amélioration faite") {
+      marquerGraphe(chemin);
+      ajouterColonneSuivi(); // Ajoute sans minArc, juste maj visuelle
+      totalFlot();
+    } else {
+      break;
+    }
+  }
+}
+
+
+
+
+
 
 
 
@@ -699,7 +787,7 @@ function calculerFlot() {
 
   initialiserTableauSuivi(); // 🔁 Réinitialise le nouveau tableau
 
-  while (verifierEtat()) {
+  do  {
     let min = minimum();
     if (!min) break;
 
@@ -712,10 +800,12 @@ function calculerFlot() {
       //addColonne();
     }
      ajouterColonneSuivi(min.arc); // ➕ Ajoute une colonne après chaque étape
-  }
+  } while(verifierEtat())
 
   draw();
   refreshArcTable();
+  marquage();//appeler ici le fonction marquage()
+  totalFlot("flot-resultat-max");
 }
 
   draw();
